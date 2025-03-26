@@ -9,4 +9,5 @@ namespace App.Scripts.Scenes.SceneMatrix.Features.FieldInteractions.Services
     {
         void GeneratePlacements(List<FigurePlacement> outputPlaces, Vector2Int fieldSize, List<ViewModelFigure> figures);
     }
+
 }

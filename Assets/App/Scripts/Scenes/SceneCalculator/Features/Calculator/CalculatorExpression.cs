@@ -1,6 +1,7 @@
-using System;
+
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Globalization;
+
 
 
 namespace App.Scripts.Scenes.SceneCalculator.Features.Calculator
@@ -26,76 +27,56 @@ namespace App.Scripts.Scenes.SceneCalculator.Features.Calculator
         //{
         //    return 6;
         //}
-        private Dictionary<string, string> _expressions = new Dictionary<string, string>();
-        private Dictionary<string, float> _values = new Dictionary<string, float>();
+        private Dictionary<string, float> constantValues = new Dictionary<string, float>();
+        private Dictionary<string, string> expressions = new Dictionary<string, string>();
 
         public float Execute(string expression)
         {
-            return Evaluate(expression);
+            return Evaluate(ExpressionToRPN(expression));
         }
 
         public void SetExpression(string expressionKey, string expression)
         {
-            _expressions[expressionKey] = expression;
+            expressions[expressionKey] = expression;
         }
 
         public void SetValue(string key, float value)
         {
-            _values[key] = value;
+            constantValues[key] = value;
         }
 
         public float Get(string expressionKey)
         {
-            if (_expressions.TryGetValue(expressionKey, out string expression))
+            if (expressions.TryGetValue(expressionKey, out var expression))
             {
-                return Evaluate(expression);
+                return Execute(expression);
             }
-            throw new ExceptionExecuteExpression($"Expression with key '{expressionKey}' not found.");
+            throw new ExceptionExecuteExpression($"Expression '{expressionKey}' not found.");
         }
 
-        private float Evaluate(string expression)
-        {
-            var tokens = Tokenize(expression);
-            var rpn = ConvertToRPN(tokens);
-            return CalculateRPN(rpn);
-        }
-
-        private List<string> Tokenize(string expression)
-        {
-            var tokens = new List<string>();
-            var regex = new Regex(@"(\d+(\.\d+)?)|([a-zA-Z]+)|([\+\-\*/\(\)])"); // Regex для чисел, переменных и операторов
-            var matches = regex.Matches(expression);
-
-            foreach (Match match in matches)
-            {
-                tokens.Add(match.Value);
-            }
-
-            return tokens;
-        }
-
-        private List<string> ConvertToRPN(List<string> tokens)
+        private List<string> ExpressionToRPN(string expression)
         {
             var output = new List<string>();
             var operators = new Stack<string>();
-            Dictionary<string, int> precedence = new Dictionary<string, int>
-        {
-            { "+", 1 },
-            { "-", 1 },
-            { "*", 2 },
-            { "/", 2 },
-            { "(", 0 }
-        };
+            var tokens = Tokenize(expression);
 
             foreach (var token in tokens)
             {
-                if (float.TryParse(token, out _)) // Если токен является числом
+                if (float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
                 {
                     output.Add(token);
                 }
-                else if (_values.ContainsKey(token)) // Если токен является переменной
+                else if (constantValues.ContainsKey(token))
                 {
-                    output.Add(_values[token].ToString());
+                    output.Add(constantValues[token].ToString(CultureInfo.InvariantCulture));
+                }
+                else if (IsOperator(token))
+                {
+                    while (operators.Count > 0 && Precedence(operators.Peek()) >= Precedence(token))
+                    {
+                        output.Add(operators.Pop());
+                    }
+                    operators.Push(token);
                 }
                 else if (token == "(")
                 {
@@ -111,19 +92,11 @@ namespace App.Scripts.Scenes.SceneCalculator.Features.Calculator
                     {
                         throw new ExceptionExecuteExpression("Mismatched parentheses.");
                     }
-                    operators.Pop(); // Удаляем '('
-                }
-                else if (precedence.ContainsKey(token)) // Если токен это оператор
-                {
-                    while (operators.Count > 0 && precedence[operators.Peek()] >= precedence[token])
-                    {
-                        output.Add(operators.Pop());
-                    }
-                    operators.Push(token);
+                    operators.Pop(); // pop the '('
                 }
                 else
                 {
-                    throw new ExceptionExecuteExpression($"Unknown token '{token}'.");
+                    throw new ExceptionExecuteExpression($"Unknown token: {token}");
                 }
             }
 
@@ -135,56 +108,91 @@ namespace App.Scripts.Scenes.SceneCalculator.Features.Calculator
             return output;
         }
 
-        private float CalculateRPN(List<string> rpn)
+        private float Evaluate(List<string> rpn)
         {
             var stack = new Stack<float>();
 
             foreach (var token in rpn)
             {
-                if (float.TryParse(token, out float value))
+                if (float.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var number))
                 {
-                    stack.Push(value);
+                    stack.Push(number);
                 }
-                else
+                else if (IsOperator(token))
                 {
                     if (stack.Count < 2)
                     {
-                        throw new ExceptionExecuteExpression("Insufficient values in the expression.");
+                        throw new ExceptionExecuteExpression("Insufficient values in expression.");
                     }
-
-                    float b = stack.Pop();
-                    float a = stack.Pop();
-
-                    switch (token)
-                    {
-                        case "+":
-                            stack.Push(a + b);
-                            break;
-                        case "-":
-                            stack.Push(a - b);
-                            break;
-                        case "*":
-                            stack.Push(a * b);
-                            break;
-                        case "/":
-                            if (b == 0)
-                            {
-                                throw new ExceptionExecuteExpression("Division by zero.");
-                            }
-                            stack.Push(a / b);
-                            break;
-                        default:
-                            throw new ExceptionExecuteExpression($"Unknown operator '{token}'.");
-                    }
+                    var right = stack.Pop();
+                    var left = stack.Pop();
+                    var result = ApplyOperation(token, left, right);
+                    stack.Push(result);
                 }
             }
 
             if (stack.Count != 1)
             {
-                throw new ExceptionExecuteExpression("Malformed expression.");
+                throw new ExceptionExecuteExpression("The user input has too many values.");
             }
 
             return stack.Pop();
+        }
+
+        private float ApplyOperation(string op, float left, float right)
+        {
+            return op switch
+            {
+                "+" => left + right,
+                "-" => left - right,
+                "*" => left * right,
+                "/" => left / right,
+                _ => throw new ExceptionExecuteExpression($"Unknown operator: {op}")
+            };
+        }
+
+        private bool IsOperator(string token) => token == "+" || token == "-" || token == "*" || token == "/";
+
+        private int Precedence(string op) => op switch
+        {
+            "+" or "-" => 1,
+            "*" or "/" => 2,
+            _ => 0
+        };
+
+        private List<string> Tokenize(string expression)
+        {
+            var tokens = new List<string>();
+            var currentNumber = string.Empty;
+
+            foreach (char c in expression)
+            {
+                if (char.IsWhiteSpace(c))
+                {
+                    continue;
+                }
+
+                if (char.IsDigit(c) || c == '.')
+                {
+                    currentNumber += c;
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(currentNumber))
+                    {
+                        tokens.Add(currentNumber);
+                        currentNumber = string.Empty;
+                    }
+                    tokens.Add(c.ToString());
+                }
+            }
+
+            if (!string.IsNullOrEmpty(currentNumber))
+            {
+                tokens.Add(currentNumber);
+            }
+
+            return tokens;
         }
     }
 }
