@@ -126,8 +126,8 @@ namespace App.Scripts.Scenes.SceneHeroes.Features.PathFinding
         {
             // Определяем препятствия
             if (cellValue == (int)ObstacleType.None) return true;
-            if (cellValue == (int)ObstacleType.Stone) return false; // Камень
-            if (cellValue == (int)ObstacleType.Water) return false; // Вода
+            //if (cellValue == (int)ObstacleType.Stone) return false; // Камень
+            //if (cellValue == (int)ObstacleType.Water) return false; // Вода
 
             return false; // В остальном случае считаем непреодолимым
         }
